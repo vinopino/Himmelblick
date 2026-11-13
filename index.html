@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Himmelblick – Wetter</title>
   <meta name="description" content="Himmelblick – Wetter, Regenradar, Warnungen und 14-Tage-Prognose mit Live-Daten.">
-  <meta name="theme-color" content="#0f2a4a">
+  <meta name="theme-color" content="#0b5596">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -19,6 +19,13 @@
 </head>
 <body>
   <canvas id="sky-canvas" aria-hidden="true"></canvas>
+
+  <!-- Startbildschirm (wird nach dem ersten Laden ausgeblendet) -->
+  <div class="splash" id="splash" aria-hidden="true">
+    <img src="icons/icon-192.png" alt="" width="96" height="96">
+    <b>Himmelblick</b>
+    <span class="splash-bar"><i></i></span>
+  </div>
 
   <div id="app">
     <!-- Kopfzeile -->
