@@ -81,17 +81,19 @@ function windUnitShort() {
 }
 
 /** Liste der Tagesvorhersagen */
-export function dayList(days, { todayIso }) {
+export function dayList(days, { todayIso, uncertainFrom = 7 }) {
   const lo = Math.min(...days.map(d => d.min));
   const hi = Math.max(...days.map(d => d.max));
   const span = Math.max(1, hi - lo);
-  return `<ul class="day-list">${days.map(d => {
+  return `<ul class="day-list">${days.map((d, idx) => {
     const left = ((d.min - lo) / span) * 100;
     const w = Math.max(6, ((d.max - d.min) / span) * 100);
     const isToday = d.iso === todayIso;
     const name = isToday ? 'Heute' : WEEKDAYS_SHORT[d.date.getUTCDay()];
-    return `<li><button class="day-row ${isToday ? 'today' : ''}" data-day="${d.i}">
-      <span class="d-name"><b>${name}</b><small>${d.date.getUTCDate()}.${d.date.getUTCMonth() + 1}.</small></span>
+    const unc = idx >= uncertainFrom;
+    const divider = idx === uncertainFrom ? `<li class="unc-divider"><span>Ab hier unsicherer – Tendenz statt genauer Werte</span></li>` : '';
+    return `${divider}<li><button class="day-row ${isToday ? 'today' : ''} ${unc ? 'uncertain' : ''}" data-day="${d.i}">
+      <span class="d-name"><b>${name}${unc ? '<i class="unc-mark" title="geringere Vorhersagegüte">±</i>' : ''}</b><small>${d.date.getUTCDate()}.${d.date.getUTCMonth() + 1}.</small></span>
       <span class="d-icon">${weatherIcon(d.code, true, { size: 34 })}</span>
       <span class="d-rain ${d.pop >= 30 ? 'wet' : ''}">${dropIcon(10)}${d.pop ?? 0}%<small>${d.precip > 0 ? mm(d.precip) : '0 mm'}</small></span>
       <span class="d-wind">${windArrow(d.dir, 12)}${wind(d.wind, { unit: false })}<small>${windUnitShort()}</small></span>
@@ -187,4 +189,47 @@ export function mountTempChart(container, hours) {
   svg.addEventListener('pointerleave', hide);
   svg.addEventListener('touchmove', e => { show(e.touches[0].clientX); }, { passive: true });
   svg.addEventListener('touchend', () => setTimeout(hide, 2500));
+}
+
+/**
+ * Temperaturkurve über mehrere Tage (Höchst-/Tiefstwerte), horizontal scrollbar auf schmalen Geräten.
+ * Ab uncertainFrom wird der Bereich als unsicherer markiert.
+ */
+export function dayTrendChart(days, { todayIso, uncertainFrom = 7, minCol = 50 } = {}) {
+  if (days.length < 2) return '';
+  const id = uid('dt');
+  const n = days.length;
+  const col = minCol;
+  const W = n * col, H = 210, top = 58, bottom = 40;
+  const maxs = days.map(d => tempVal(d.max)), mins = days.map(d => tempVal(d.min));
+  const hi = Math.max(...maxs), lo = Math.min(...mins);
+  const span = Math.max(4, hi - lo);
+  const y = v => top + 14 + (1 - (v - lo) / span) * (H - top - bottom - 28);
+  const xs = i => i * col + col / 2;
+  const pMax = maxs.map((v, i) => [xs(i), y(v)]);
+  const pMin = mins.map((v, i) => [xs(i), y(v)]);
+  const band = `${smoothPath(pMax)} L${pMin[n - 1][0]},${pMin[n - 1][1]} ${smoothPath([...pMin].reverse()).replace(/^M/, 'L')} Z`;
+  const ux = uncertainFrom < n ? uncertainFrom * col : null;
+  return `<div class="hour-scroll trend-scroll" data-noswipe>
+    <div class="trend" style="width:max(100%, ${W}px)">
+      <svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" width="100%" height="${H}" aria-hidden="true">
+        <defs>
+          <linearGradient id="${id}b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--chart-line)" stop-opacity=".35"/><stop offset="1" stop-color="var(--bar)" stop-opacity=".25"/></linearGradient>
+          <pattern id="${id}u" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="8" fill="currentColor" opacity=".07"/></pattern>
+        </defs>
+        ${ux != null ? `<rect x="${ux}" y="0" width="${W - ux}" height="${H}" fill="url(#${id}u)" class="unc-zone"/><line x1="${ux}" x2="${ux}" y1="0" y2="${H}" class="unc-line"/>` : ''}
+        <path d="${band}" fill="url(#${id}b)"/>
+        <path d="${smoothPath(pMax)}" class="trend-max" pathLength="1"/>
+        <path d="${smoothPath(pMin)}" class="trend-min" pathLength="1"/>
+      </svg>
+      <div class="trend-cols">${days.map((d, i) => `<button class="trend-col ${d.iso === todayIso ? 'today' : ''} ${i >= uncertainFrom ? 'uncertain' : ''}" data-day="${d.i}" style="width:${100 / n}%" aria-label="${WEEKDAYS_SHORT[d.date.getUTCDay()]} ${d.date.getUTCDate()}.: ${temp(d.max)} / ${temp(d.min)}">
+          <span class="t-day">${d.iso === todayIso ? 'Heute' : WEEKDAYS_SHORT[d.date.getUTCDay()]}</span>
+          ${weatherIcon(d.code, true, { size: 26 })}
+          <span class="t-max" style="top:${((pMax[i][1] - 22) / H) * 100}%">${Math.round(maxs[i])}°</span>
+          <span class="t-min" style="top:${((pMin[i][1] + 8) / H) * 100}%">${Math.round(mins[i])}°</span>
+          <span class="t-pop ${d.pop >= 30 ? 'wet' : ''}">${d.pop ?? 0}%</span>
+        </button>`).join('')}</div>
+    </div>
+  </div>
+  <div class="tchart-legend"><span class="lg-t">Höchstwert</span><span class="lg-min">Tiefstwert</span>${ux != null ? '<span class="lg-unc">unsicherer Bereich</span>' : ''}</div>`;
 }

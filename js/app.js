@@ -12,7 +12,7 @@ import { renderForecast } from './views/forecast.js';
 import { renderWarnings, warningCount } from './views/warnings.js';
 import { renderMore } from './views/more.js';
 import { openLocationSheet } from './views/locations.js';
-import { radarVisible, radarHidden, radarLocationChanged, radarThemeChanged, radarSettingsChanged } from './views/radar.js';
+import { radarVisible, radarHidden, radarLocationChanged, radarThemeChanged, radarSettingsChanged, radarDataChanged } from './views/radar.js';
 
 const TABS = ['wetter', 'radar', 'vorhersage', 'warnungen', 'mehr'];
 const DEFAULT_LOC = { name: 'Berlin', admin1: 'Berlin', country: 'Deutschland', cc: 'DE', lat: 52.5244, lon: 13.4105 };
@@ -21,11 +21,22 @@ let refreshTimer = null;
 let loadSeq = 0;
 
 /* ================= Theme ================= */
+// 'auto' = nach Tageszeit am gewählten Ort (Tag hell, Nacht dunkel), 'system' = Systemeinstellung
+function isNightAtLocation() {
+  const fc = store.data.forecast;
+  if (fc?.current) return fc.current.is_day === 0;
+  const h = new Date().getHours();
+  return h < 7 || h >= 19;
+}
 function applyTheme() {
   const t = store.settings.theme;
-  const dark = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const dark = t === 'dark'
+    || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    || (t === 'auto' && isNightAtLocation());
+  const prev = document.documentElement.dataset.theme;
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   updateScene();
+  if (prev && prev !== document.documentElement.dataset.theme) radarThemeChanged();
 }
 
 function updateScene() {
@@ -79,7 +90,16 @@ function renderView(tab) {
   }
 }
 
+function hideSplash() {
+  const s = document.getElementById('splash');
+  if (!s || s.classList.contains('out')) return;
+  s.classList.add('out');
+  setTimeout(() => s.remove(), 600);
+}
+
 function renderAll() {
+  if (store.data.forecast || store.meta.error) hideSplash();
+  radarDataChanged();
   renderHeader();
   renderView(activeTab);
   // Startbildschirm immer aktuell halten (für schnelles Zurückwechseln)
@@ -129,7 +149,7 @@ async function loadAll({ force = false } = {}) {
     store.meta.stale = !!res.stale;
     store.meta.error = null;
     if (res.stale) toast('Keine Verbindung – zeige zuletzt gespeicherte Daten.', { type: 'warn' });
-    updateScene();
+    applyTheme();
     renderAll();
   } catch (e) {
     if (seq !== loadSeq) return;
@@ -239,7 +259,7 @@ function init() {
 
   // Einstellungen
   store.on('settings', ({ key }) => {
-    if (key === 'theme') { applyTheme(); radarThemeChanged(); }
+    if (key === 'theme') applyTheme();
     if (key === 'animations') {
       setAnimationsEnabled(store.settings.animations);
       document.documentElement.classList.toggle('no-anim', !store.settings.animations);
@@ -253,12 +273,18 @@ function init() {
   store.on('reload', () => loadAll({ force: true }));
   store.on('reload-alerts', () => loadAll({ force: true }));
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
-    if (store.settings.theme === 'auto') { applyTheme(); radarThemeChanged(); }
+    if (store.settings.theme === 'system') applyTheme();
   });
 
   // Verbindung
   const net = () => {
-    $('#offline-bar').hidden = navigator.onLine;
+    const bar = $('#offline-bar');
+    bar.hidden = navigator.onLine;
+    if (!navigator.onLine) {
+      bar.textContent = store.meta.updated
+        ? `Offline – du siehst Wetterdaten vom ${fmtDate(new Date(store.meta.updated - new Date().getTimezoneOffset() * 60000), { weekday: false })}, ${new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(store.meta.updated)} Uhr. Radar und Karten sind ohne Verbindung nicht verfügbar.`
+        : 'Offline – es sind noch keine Wetterdaten gespeichert. Bitte Internetverbindung herstellen.';
+    }
     document.body.classList.toggle('offline', !navigator.onLine);
   };
   window.addEventListener('online', () => { net(); toast('Wieder online – Daten werden aktualisiert.'); loadAll({ force: true }); });
@@ -272,24 +298,41 @@ function init() {
 
   setInterval(updateClock, 30000);
 
-  // Start
+  // Start: Standort zuerst festlegen, dann Ansicht öffnen (Radar braucht den Standort)
+  const firstStart = !store.location;
+  if (firstStart) store.setLocation(DEFAULT_LOC);
+  renderHeader();
   navigate(location.hash.slice(1) || 'wetter', { fromHash: true });
-  if (store.location) {
-    renderHeader();
-    loadAll();
-  } else {
-    store.setLocation(DEFAULT_LOC);
-    renderHeader();
-    loadAll();
-    // Beim ersten Start einmalig Standort anfragen
-    locateMe({ silent: true });
-  }
+  loadAll();
+  // Beim ersten Start einmalig Standort anfragen
+  if (firstStart) locateMe({ silent: true });
+
+  setTimeout(hideSplash, 4000);
 
   // PWA
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__deferredInstall = e; });
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service Worker nicht registriert', err));
-  }
+  registerServiceWorker();
+}
+
+/* ================= Service Worker & Updates ================= */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  // Neue Version übernimmt die Kontrolle → einmalig neu laden, damit niemand alten Code behält
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    toast('Himmelblick wurde aktualisiert.');
+    setTimeout(() => location.reload(), 600);
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    // Bei Rückkehr in die App nach Updates suchen (max. alle 30 Min.)
+    let lastCheck = Date.now();
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && Date.now() - lastCheck > 30 * 60000) { lastCheck = Date.now(); reg.update().catch(() => {}); }
+    });
+  }).catch(err => console.warn('Service Worker nicht registriert', err));
 }
 
 init();

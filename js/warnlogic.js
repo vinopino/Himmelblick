@@ -5,7 +5,7 @@ export const LEVELS = {
   1: { name: 'Wetterwarnung', short: 'Stufe 1', cls: 'w1' },
   2: { name: 'Markante Wetterwarnung', short: 'Stufe 2', cls: 'w2' },
   3: { name: 'Unwetterwarnung', short: 'Stufe 3', cls: 'w3' },
-  4: { name: 'Extreme Unwetterwarnung', short: 'Stufe 4', cls: 'w4' }
+  4: { name: 'Warnung vor extremem Unwetter', short: 'Stufe 4', cls: 'w4' }
 };
 
 const SEVERITY = { minor: 1, moderate: 2, severe: 3, extreme: 4 };
@@ -56,7 +56,7 @@ export function officialAlerts(resp) {
       headline: a.headline_de || a.headline_en || '',
       description: a.description_de || a.description_en || '',
       instruction: a.instruction_de || a.instruction_en || '',
-      onset: a.onset,
+      onset: a.onset || a.effective,
       expires: a.expires,
       effective: a.effective,
       future: a.onset && Date.parse(a.onset) > now
