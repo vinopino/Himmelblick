@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Himmelblick – Wetter</title>
+  <meta name="description" content="Himmelblick – Wetter, Regenradar, Warnungen und 14-Tage-Prognose mit Live-Daten.">
+  <meta name="theme-color" content="#0f2a4a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Himmelblick">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <canvas id="sky-canvas" aria-hidden="true"></canvas>
+
+  <div id="app">
+    <!-- Kopfzeile -->
+    <header class="topbar" id="topbar">
+      <button class="loc-btn" id="loc-btn" aria-label="Ort wählen">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
+        <span class="loc-text">
+          <span class="loc-name" id="loc-name">Standort…</span>
+          <span class="loc-time" id="loc-time"></span>
+        </span>
+        <svg class="ico chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+      </button>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="gps-btn" aria-label="Aktuellen Standort verwenden">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm8.94 3A9 9 0 0 0 13 3.06V1h-2v2.06A9 9 0 0 0 3.06 11H1v2h2.06A9 9 0 0 0 11 20.94V23h2v-2.06A9 9 0 0 0 20.94 13H23v-2h-2.06zM12 19a7 7 0 1 1 0-14 7 7 0 0 1 0 14z"/></svg>
+        </button>
+        <button class="icon-btn" id="fav-btn" aria-label="Als Favorit speichern" aria-pressed="false">
+          <svg class="ico" viewBox="0 0 24 24"><path class="star" d="M12 17.3l6.2 3.7-1.6-7 5.4-4.7-7.1-.6L12 2 9.1 8.7 2 9.3l5.4 4.7-1.6 7z"/></svg>
+        </button>
+        <button class="icon-btn" id="refresh-btn" aria-label="Aktualisieren">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="offline-bar" id="offline-bar" hidden>Keine Internetverbindung – angezeigte Daten stammen aus dem Zwischenspeicher.</div>
+
+    <main id="views">
+      <section class="view" id="view-wetter" data-view="wetter" aria-label="Wetter">
+        <div class="ptr" id="ptr"><div class="ptr-spinner"></div><span class="ptr-label">Zum Aktualisieren ziehen</span></div>
+        <div class="view-inner" id="home"></div>
+      </section>
+      <section class="view view-map" id="view-radar" data-view="radar" aria-label="Radar und Karten">
+        <div id="radar-root"></div>
+      </section>
+      <section class="view" id="view-vorhersage" data-view="vorhersage" aria-label="Vorhersage">
+        <div class="view-inner" id="forecast"></div>
+      </section>
+      <section class="view" id="view-warnungen" data-view="warnungen" aria-label="Warnungen">
+        <div class="view-inner" id="warnings"></div>
+      </section>
+      <section class="view" id="view-mehr" data-view="mehr" aria-label="Mehr">
+        <div class="view-inner" id="more"></div>
+      </section>
+    </main>
+
+    <!-- Untere Navigation -->
+    <nav class="tabbar" id="tabbar" aria-label="Hauptnavigation">
+      <button class="tab" data-tab="wetter" aria-label="Wetter">
+        <svg viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8zM4 10.5H1v2h3zm9-9.95h-2V3.5h2zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41zM17.24 18.16l1.79 1.8 1.41-1.41-1.8-1.79zM20 10.5v2h3v-2zM12 5.5a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm-1 16.95h2V19.5h-2zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41z"/></svg>
+        <span>Wetter</span>
+      </button>
+      <button class="tab" data-tab="radar" aria-label="Radar">
+        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10h-2a8 8 0 1 1-8-8V2zm0 4a6 6 0 1 0 6 6h-2a4 4 0 1 1-4-4V6zm0 4a2 2 0 1 0 2 2h-2v-2zm1-8v9h9A9 9 0 0 0 13 2z"/></svg>
+        <span>Radar</span>
+      </button>
+      <button class="tab" data-tab="vorhersage" aria-label="Vorhersage">
+        <svg viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V9h14v11zM7 11h5v5H7z"/></svg>
+        <span>Vorhersage</span>
+      </button>
+      <button class="tab" data-tab="warnungen" aria-label="Warnungen">
+        <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+        <span>Warnungen</span>
+        <i class="tab-badge" id="warn-badge" hidden></i>
+      </button>
+      <button class="tab" data-tab="mehr" aria-label="Mehr">
+        <svg viewBox="0 0 24 24"><path d="M6 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm12 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+        <span>Mehr</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Bottom-Sheet für Details, Ortssuche usw. -->
+  <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden>
+    <div class="sheet-grip" id="sheet-grip"><span></span></div>
+    <button class="sheet-close icon-btn" id="sheet-close" aria-label="Schließen">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+    </button>
+    <div class="sheet-body" id="sheet-body"></div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
