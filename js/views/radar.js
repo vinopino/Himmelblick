@@ -130,28 +130,18 @@ function init() {
 }
 
 function setBase() {
+  const dark = isDark();
   if (baseLayer) map.removeLayer(baseLayer);
-  if (labelLayer) {
-    map.removeLayer(labelLayer);
-    labelLayer = null;
-  }
-
-  baseLayer = L.tileLayer(
-    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    {
-      maxZoom: 19,
-      attribution:
-        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }
-  );
-
-  if (active !== 'sat') {
-    baseLayer.addTo(map);
-  }
+  if (labelLayer) map.removeLayer(labelLayer);
+  const style = dark ? 'dark' : 'light';
+  baseLayer = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}_nolabels/{z}/{x}/{y}{r}.png`, {
+    subdomains: 'abcd', maxZoom: 19,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende © <a href="https://carto.com/attributions">CARTO</a>'
+  });
+  labelLayer = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}_only_labels/{z}/{x}/{y}{r}.png`, { subdomains: 'abcd', maxZoom: 19, pane: 'labels' });
+  if (active !== 'sat') baseLayer.addTo(map);
+  labelLayer.addTo(map);
 }
-
-
-
 
 /* ---------- Ebenenwechsel ---------- */
 function switchLayer(id, force = false) {
